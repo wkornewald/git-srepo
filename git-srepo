@@ -1,0 +1,424 @@
+#!/bin/bash
+set -euo pipefail
+
+# Get name of this script without the "git-" prefix
+NAME=$(basename "$0")
+NAME=${NAME:4}
+
+main_help="\
+git $NAME <options> <command> <arguments>
+
+Import other repositories into your git repository.
+This is a simpler alternative to git subtree, submodule, stree, and subrepo.
+
+Commits to an imported repo are kept within your project repo until you push
+them to the imported repo. Local changes are maintained as a clean, rebased
+set of patches for upstream contribution.
+
+Commands:
+
+  import    Import a remote repository into a local subdirectory
+  export    Export a subdirectory into a remote repository
+  pull      Pull remote changes
+  push      Push local changes to remote
+  list      List imported repositories
+
+  help      Documentation for specific command
+
+Options:
+--
+h,help      Show help
+
+d,debug     Show the actual commands used
+"
+main_min_args=1
+
+init_script() {
+  ROOT="$(get-root)"
+  cd "$ROOT"
+}
+
+import_help="\
+git $NAME import <repository> <directory> [revision]
+
+Import repository into a directory.
+
+By default, imports master branch. You can optionally choose a specific
+revision/tag or branch.
+
+Subsequent pulls will fetch from that revision/branch, by default.
+--
+"
+import_min_args=2
+import_max_args=3
+import() {
+  local remote="$1"
+  local subdir="$2"
+  local revision="${3:-master}"
+
+  [ -e "$subdir" ] &&
+    die "Directory '$subdir' already exists. Please remove it first."
+
+  build "$subdir" "$remote" "$revision"
+}
+
+export_help="\
+git $NAME export <directory> <repository> [branch]
+
+Export directory into a repository.
+
+By default, exports as master branch. You can optionally choose a different
+branch name.
+--
+"
+export_min_args=2
+export_max_args=3
+export() {
+  local subdir="$1"
+  local remote="$2"
+  local branch="${3:-master}"
+
+  [ ! -e "$subdir" ] &&
+    die "Directory '$subdir' doesn't exist"
+
+  # TODO: just save config? which remote revision do we use? do we have to push here?
+  # remote revision is $branch of $tmp_repo
+  die "Not yet implemented"
+}
+
+pull_help="\
+git $NAME pull <directory> [revision]
+
+Pull new changes from imported repository.
+
+By default, this pulls from previously pulled/imported branch/revision/tag.
+You can optionally choose a specific revision/tag or branch.
+--
+"
+pull_min_args=1
+pull_max_args=2
+pull() {
+  local subdir="$1"
+  local revision="${2:-}"
+
+  [ ! -e "$subdir" ] &&
+    die "Directory '$subdir' doesn't exist"
+  local datadir="$ROOT/$subdir/.subrepo"
+  local cfg="$datadir/config"
+
+  build "$subdir" "" "" "$revision"
+}
+
+push_help="\
+git $NAME push <directory> [repository] [branch]
+
+Push new changes to remote repository.
+
+By default, this pushes to previously pulled/imported repository and branch.
+You can optionally choose a specific repository and branch.
+--
+"
+push_min_args=1
+push_max_args=3
+push() {
+  local subdir="$1"
+  local remote="${2:-origin}"
+  local branch="${3:-}"
+
+  [ ! -e "$subdir" ] &&
+    die "Directory '$subdir' doesn't exist"
+
+  local datadir="$ROOT/$subdir/.subrepo"
+  local cfg="$datadir/config"
+  local tmp_repo="$ROOT/.git/.subrepo/$subdir"
+  build "$subdir"
+  cd "$tmp_repo"
+  git push "$remote" "master:${branch:-$(git config --file="$cfg" subrepo.revision)}"
+}
+
+list_help="\
+git $NAME list
+
+List imported repositories.
+--
+"
+list_max_args=0
+list() {
+  local paths=($(
+    find . -name '.subrepo' |
+      grep -v '/.git/' |
+      grep '/.subrepo$' |
+      sed 's/\/.subrepo$//' |
+      sed 's/^.\///' |
+      sort
+  ))
+  subrepos=()
+  local path
+  for path in "${paths[@]}"; do
+    echo "$path"
+  done
+}
+
+build() {
+  # Builds branch with our private changes rebased on top.
+  # Also imports new subtree into project.
+  # We use an --interactive rebase because the rebased changes should stay
+  # clean, so they can later easily be contributed upstream.
+
+  # Args:
+  # * subdir
+  # * remote repo URL
+  # * revision
+  # * interactive: bool (optional)
+
+  # Replace \ with / in case we're on Windows
+  local subdir="${1//\\//}"
+  # Strip trailing slashes
+  subdir="${subdir%/}"
+
+  local datadir="$ROOT/$subdir/.subrepo"
+  local cfg="$datadir/config"
+  local patch="$datadir/patch"
+  local remotepath="${2:-$(git config --file="$cfg" subrepo.remote)}"
+  local revision="${3:-$(git config --file="$cfg" subrepo.revision)}"
+  local interactive="${4:-}"
+  local branch="master"
+
+  local hasconfig=false
+  [ -e "$cfg" ] &&
+    hasconfig=true
+
+  [ -e "$subdir" ] && {
+    [ "$(git status --short -- "$subdir")" ] &&
+      die "You have uncommited changes in '$subdir'"
+    [ ! -e "$cfg" ] &&
+      die "'$subdir' has no config"
+  }
+
+  echo "Create local clone"
+  local orig_branch="$(get-branch)"
+  local tmp_repo="$ROOT/.git/.subrepo/$subdir"
+  rm -rf "$tmp_repo"
+  mkdir -p "$(dirname "$tmp_repo")"
+  git clone --shared -o parent -b "$orig_branch" "$ROOT" "$tmp_repo"
+  cd "$tmp_repo"
+
+  # Detach and remove project branch so we don't have a conflict with $branch
+  git checkout -q --detach
+  git branch -d -q "$orig_branch"
+
+  # Add remote tracking branch containing our rebased changes on top ($branch)
+  local remote="$(cd "$remotepath" && pwd || echo "$remotepath")"
+  git remote add origin "$remote"
+  git fetch -q origin "$revision"
+  local fetch_head="$(git rev-parse FETCH_HEAD)"
+  # Don't switch to branch, yet. We'll import current revision's changes below
+  git branch -q "$branch" "$fetch_head"
+
+  # If $subdir exists we import its changes into $branch
+  if [ -e "$subdir" ]; then
+    local unchanged_head="$(git config --file="$cfg" subrepo.remoterev)"
+    [ "$CMD" = "pull" ] && [ "$fetch_head" = "$unchanged_head" ] &&
+        [ ! "$interactive" ] && {
+      echo "No changes found"
+      return
+    }
+    [ -e "$patch" ] && [ -s "$patch" ] && {
+      echo "Apply known patches"
+      local project_head="$(git rev-parse HEAD)"
+      local remoterev="$unchanged_head"
+      git checkout -f -q "$remoterev"
+      git clean -f -d -q
+      git am "$patch"
+      unchanged_head="$(git rev-parse HEAD)"
+      if [ "$remoterev" != "$fetch_head" ] || [ "$interactive" ]; then
+        rebase --onto "$branch" "$remoterev" HEAD
+      fi
+      git branch -f -q "$branch" HEAD
+      git checkout -f -q "$project_head"
+      git clean -f -d -q
+    }
+
+    echo "Import new changes"
+    local localrev="$(git config --file="$cfg" subrepo.localrev)"
+    [ "$localrev" ] &&
+      git filter-branch -f --parent-filter "grep -v $localrev || true" -- \
+                        "$localrev"..HEAD
+    git filter-branch -f --subdirectory-filter "$subdir"
+    git filter-branch -f --tree-filter "rm -rf .subrepo"
+
+    local torebase="$(git rev-list HEAD | count-lines)"
+    [ "$torebase" -gt "1" ] && {
+      echo "Rebase local commits"
+      local first="$(get-first-commit HEAD)"
+      rebase --onto "$branch" "$first" HEAD
+      git branch -f -q "$branch" HEAD
+    }
+
+    [ "$(git rev-parse "$branch")" = "$unchanged_head" ] && {
+      echo "No changes found"
+      return
+    }
+  fi
+
+  git checkout -f -q "$branch"
+  git clean -f -d -q
+
+  # Import changes into project
+  echo "Import into '$subdir'"
+  cd "$ROOT"
+  local localsync="$(git rev-parse HEAD)"
+  git fetch -q "$tmp_repo" "$branch"
+  rm -rf "$subdir"
+  git add -A "$subdir"
+  git read-tree -u --prefix "$subdir" FETCH_HEAD
+  mkdir -p "$datadir"
+  cd "$tmp_repo"
+  git format-patch -k --stdout --binary "$fetch_head..$branch" > "$patch"
+  [ ! -s "$patch" ] &&
+    rm -f "$patch"
+  cd "$ROOT"
+  git config --file="$cfg" subrepo.remote "$remotepath"
+  git config --file="$cfg" subrepo.revision "$revision"
+  git config --file="$cfg" subrepo.localrev "$localsync"
+  git config --file="$cfg" subrepo.remoterev "$fetch_head"
+
+  # Commit changes
+  git add -A "$subdir"
+  local action="Added"
+  [ "$hasconfig" ] &&
+    action="Updated"
+  git commit -m "$action $subdir from $remotepath" "$subdir"
+
+  echo "Done"
+}
+
+rebase() {
+  git rebase --interactive --merge "$@" || {
+    while true; do
+      rebase-done && break || true
+      # TODO: what if user aborts commit dialog (exit code 0)? check output?
+      git mergetool || die "Rebase aborted"
+      git rebase --continue && break
+    done
+  }
+  rebase-done || die "Error: you haven't finished the rebase"
+}
+
+rebase-done() {
+  local dir="$(get-git-dir)"
+  [ ! -e "$dir/rebase-apply" ] && [ ! -e "$dir/rebase-merge" ]
+}
+
+get-first-commit() {
+  local rev="$1"
+  local path="${2:-}"
+
+  local args=
+  [ ! "$path" ] &&
+    args=--max-parents=0
+  git rev-list "$args" "$rev" -- "$path" | tail -1
+}
+
+get-git-dir() {
+  echo "$(get-root)/.git"
+}
+
+get-root() {
+  git rev-parse --show-toplevel
+}
+
+get-branch() {
+  git rev-parse --abbrev-ref HEAD
+}
+
+count-lines() {
+  grep -c $'\n'
+}
+
+die() {
+  echo "$@" 1>&2
+  exit 1
+}
+
+# Handles argument parsing and help message output for all commands
+run() {
+  local cmd="$1"
+  shift
+
+  # This is used for show_help
+  CMD="$cmd"
+
+  local cmdname="${cmd//-/_}"
+  local getopt_spec="${cmdname}_help"
+
+  local extra=
+  [ "$cmd" = "main" ] &&
+    extra="--stop-at-non-option"
+  eval "$(
+    echo "${!getopt_spec}" |
+      git rev-parse --parseopt $extra -- "$@" ||
+    echo exit $?
+  )"
+
+  while [ $# -gt 0 ]; do
+    local arg="$1"
+    shift
+    [ "$arg" = "--" ] &&
+      break
+    local value="true"
+    [[ "$1" != -* ]] && {
+      value="$1"
+      shift
+    }
+    declare "${cmdname}_flag${arg//-/_}=$value"
+  done
+
+  local min_args="${cmdname}_min_args"
+  [ $# -lt "${!min_args:-0}" ] &&
+    show_help "Not enough arguments"
+  local max_args="${cmdname}_max_args"
+  [ $# -gt "${!max_args:-1000}" ] && {
+    local restindex=$(expr ${!max_args} + 1)
+    show_help "Too many arguments: ${@:$restindex}"
+  }
+
+  "$cmd" "$@"
+}
+
+show_help() {
+  echo "$@" 1>&2
+  run "$CMD" --help
+}
+
+main() {
+  [ "${main_flag_d:-}" ] &&
+    set -x
+
+  local cmd="$1"
+  shift
+  case "$cmd" in
+    pull|push|import|export|list) run "$cmd" "$@" ;;
+    help)
+      [ $# -ne 1 ] && {
+        [ $# -gt 1 ] &&
+          echo "Unknown arguments: ${@:2}" 1>&2
+        run main --help
+        return
+      }
+      local cmd="$1"
+      shift
+      case "$cmd" in
+        pull|push|import|export|list)
+          run "$cmd" --help
+          exit 0
+          ;;
+      *) die "Unknown command: '$cmd'"
+      esac
+      ;;
+    *) show_help "Unknown command: $cmd" ;;
+  esac
+}
+
+init_script
+run main "$@"
