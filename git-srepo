@@ -211,7 +211,7 @@ build() {
   git branch -d -q "$orig_branch"
 
   # Add remote tracking branch containing our rebased changes on top ($branch)
-  local remote="$(cd "$remotepath" && pwd || echo "$remotepath")"
+  local remote="$(cd "$remotepath" &> /dev/null && pwd || echo "$remotepath")"
   git remote add origin "$remote"
   git fetch -q origin "$revision"
   local fetch_head="$(git rev-parse FETCH_HEAD)"
