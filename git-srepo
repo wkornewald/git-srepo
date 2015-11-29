@@ -273,7 +273,7 @@ build() {
   local localsync="$(git rev-parse HEAD)"
   git fetch -q "$tmp_repo" "$branch"
   rm -rf "$subdir"
-  git add -A "$subdir"
+  git add -A "$subdir" &> /dev/null || true
   git read-tree -u --prefix "$subdir" FETCH_HEAD
   mkdir -p "$datadir"
   cd "$tmp_repo"
