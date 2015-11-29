@@ -291,7 +291,7 @@ build() {
   local action="Added"
   [ "$hasconfig" ] &&
     action="Updated"
-  git commit -m "$action $subdir from $remotepath" "$subdir"
+  git commit -m "$action $subdir from $remotepath"
 
   echo "Done"
 }
