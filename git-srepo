@@ -188,6 +188,9 @@ build() {
   [ -e "$cfg" ] &&
     hasconfig=true
 
+  [ "$(git diff --cached --name-only)" ] &&
+    die "You have staged changes. Either stash or commit them first."
+
   [ -e "$subdir" ] && {
     [ "$(git status --short -- "$subdir")" ] &&
       die "You have uncommited changes in '$subdir'"
