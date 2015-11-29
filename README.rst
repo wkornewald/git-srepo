@@ -10,6 +10,10 @@ contribution.
 
 TODO: You can also export an existing folder into a separate repo.
 
+Installation
+------------
+Just add the git-srepo script to your PATH.
+
 Examples
 --------
 Import d3 repository into lib/d3 folder::
