@@ -299,9 +299,10 @@ build() {
 rebase() {
   git rebase --interactive --merge "$@" || {
     while true; do
+      echo
+      echo "Exit this subshell once you're finished to continue $NAME $CMD."
+      bash --rcfile <(echo "PS1='(rebasing): '") -i
       rebase-done && break || true
-      # TODO: what if user aborts commit dialog (exit code 0)? check output?
-      git mergetool || die "Rebase aborted"
       git rebase --continue && break
     done
   }
