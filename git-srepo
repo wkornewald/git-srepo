@@ -122,18 +122,31 @@ push_min_args=1
 push_max_args=3
 push() {
   local subdir="$1"
+  local datadir="$ROOT/$subdir/.subrepo"
+  local cfg="$datadir/config"
+  local patch="$datadir/patch"
+  local defaultbranch="$(git config --file="$cfg" subrepo.revision)"
   local remote="${2:-origin}"
-  local branch="${3:-}"
+  local branch="${3:-$defaultbranch}"
 
   [ ! -e "$subdir" ] &&
     die "Directory '$subdir' doesn't exist"
 
-  local datadir="$ROOT/$subdir/.subrepo"
-  local cfg="$datadir/config"
-  local tmp_repo="$ROOT/.git/.subrepo/$subdir"
   build "$subdir"
+
+  local tmp_repo="$ROOT/.git/.subrepo/$subdir"
   cd "$tmp_repo"
-  git push "$remote" "master:${branch:-$(git config --file="$cfg" subrepo.revision)}"
+  git push "$remote" "master:$branch"
+
+  [ -e "$patch" ] && [ "$remote" = "origin" ] &&
+      [ "$branch" = "$defaultbranch" ] && {
+    local remoterev="$(git rev-parse master)"
+    cd "$ROOT"
+    rm -rf "$patch"
+    git config --file="$cfg" subrepo.remoterev "$remoterev"
+    git add -A -- "$subdir"
+    git commit --amend --no-edit
+  }
 }
 
 list_help="\
