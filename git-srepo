@@ -106,7 +106,7 @@ pull() {
   local datadir="$ROOT/$subdir/.subrepo"
   local cfg="$datadir/config"
 
-  build "$subdir" "" "" "$revision"
+  build "$subdir" "" "$revision"
 }
 
 push_help="\
