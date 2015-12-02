@@ -34,6 +34,7 @@ d,debug     Show the actual commands used
 main_min_args=1
 
 init_script() {
+  ORIG_PWD="$(pwd)"
   ROOT="$(get-root)"
   cd "$ROOT"
 }
@@ -183,6 +184,9 @@ build() {
   # * remote repo URL
   # * revision
   # * interactive: bool (optional)
+
+  [ "$ORIG_PWD" != "$(cd "$ROOT" && pwd)" ] &&
+    die "You must run this command from your repo root folder."
 
   # Replace \ with / in case we're on Windows
   local subdir="${1//\\//}"
