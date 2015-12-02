@@ -18,7 +18,7 @@ Examples
 --------
 Import d3 repository into lib/d3 folder::
 
-  git srepo import https://github.com/mbostock/d3 lib/d3
+  git srepo import lib/d3 https://github.com/mbostock/d3
 
 Pull new changes::
 

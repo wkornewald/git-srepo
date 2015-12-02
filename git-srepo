@@ -39,9 +39,9 @@ init_script() {
 }
 
 import_help="\
-git $NAME import <repository> <directory> [revision]
+git $NAME import <directory> <repository> [revision]
 
-Import repository into a directory.
+Import repository into directory.
 
 By default, imports master branch. You can optionally choose a specific
 revision/tag or branch.
@@ -52,8 +52,8 @@ Subsequent pulls will fetch from that revision/branch, by default.
 import_min_args=2
 import_max_args=3
 import() {
-  local remote="$1"
-  local subdir="$2"
+  local subdir="$1"
+  local remote="$2"
   local revision="${3:-master}"
 
   [ -e "$subdir" ] &&
