@@ -213,16 +213,22 @@ build() {
   }
 
   echo "Create local clone"
-  local orig_branch="$(get-branch)"
+  local orig_rev="$(git rev-parse HEAD 2> /dev/null)"
+  [ "$orig_rev" = "HEAD" ] &&
+    orig_rev="null"
+  local orig_branch="$(get-branch 2> /dev/null)"
   local tmp_repo="$ROOT/.git/.subrepo/$subdir"
   rm -rf "$tmp_repo"
   mkdir -p "$(dirname "$tmp_repo")"
-  git clone --shared -o parent -b "$orig_branch" "$ROOT" "$tmp_repo"
+  git clone --shared -o parent "$ROOT" "$tmp_repo"
   cd "$tmp_repo"
 
   # Detach and remove project branch so we don't have a conflict with $branch
-  git checkout -q --detach
-  git branch -d -q "$orig_branch"
+  [ "$orig_rev" != "null" ] && {
+    # Repository is not empty
+    git checkout -q --detach
+    git branch -d -q "$orig_branch"
+  }
 
   # Add remote tracking branch containing our rebased changes on top ($branch)
   git remote add origin "$remote"
@@ -241,7 +247,6 @@ build() {
     }
     [ -e "$patch" ] && [ -s "$patch" ] && {
       echo "Apply known patches"
-      local project_head="$(git rev-parse HEAD)"
       local remoterev="$unchanged_head"
       git checkout -f -q "$remoterev"
       git clean -f -d -q
@@ -251,17 +256,24 @@ build() {
         rebase --onto "$branch" "$remoterev" HEAD
       fi
       git branch -f -q "$branch" HEAD
-      git checkout -f -q "$project_head"
+      git checkout -f -q "$orig_rev"
       git clean -f -d -q
     }
 
     echo "Import new changes"
     local localrev="$(git config --file="$cfg" subrepo.localrev)"
-    [ "$localrev" ] &&
+    # Check if subdir has a parent revision (localrev), at all.
+    # There is no parent on first export or after import into an empty repo.
+    if [ "$localrev" ]; then
       git filter-branch -f --parent-filter "grep -v $localrev || true" \
                            --subdirectory-filter "$subdir" \
                            --tree-filter "rm -rf .subrepo" \
                            -- "$localrev"..HEAD
+    else
+      git filter-branch -f --subdirectory-filter "$subdir" \
+                           --tree-filter "rm -rf .subrepo" \
+                           -- HEAD
+    fi
 
     local torebase="$(git rev-list HEAD | count-lines)"
     [ "$torebase" -gt "1" ] && {
@@ -283,7 +295,6 @@ build() {
   # Import changes into project
   echo "Import into '$subdir'"
   cd "$ROOT"
-  local localsync="$(git rev-parse HEAD)"
   git fetch -q "$tmp_repo" "$branch"
   rm -rf "$subdir"
   git add -A "$subdir" &> /dev/null || true
@@ -296,7 +307,9 @@ build() {
   cd "$ROOT"
   git config --file="$cfg" subrepo.remote "$remotepath"
   git config --file="$cfg" subrepo.revision "$revision"
-  git config --file="$cfg" subrepo.localrev "$localsync"
+  # Write the parent revision if we have one
+  [ "$orig_rev" != "null" ] &&
+    git config --file="$cfg" subrepo.localrev "$orig_rev"
   git config --file="$cfg" subrepo.remoterev "$fetch_head"
 
   # Commit changes
