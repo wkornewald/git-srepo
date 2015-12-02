@@ -1,0 +1,118 @@
+#!/bin/bash
+set -euo pipefail
+
+die() {
+  printf '"%s" ' Error: "$@" 1>&2
+  echo "" 1>&2
+  exit 1
+}
+
+fail-if() {
+  "${@:2}" &> /dev/null ||
+    die "$1": "${@:2}"
+}
+
+equals() {
+  [ "$1" = "$2" ] &&
+    return 0
+  return 1
+}
+
+TMP="$(mktemp -d /tmp/srepoXXXXXXXXX)"
+cleanup() {
+  rm -rf "$TMP"
+}
+trap cleanup INT TERM EXIT
+
+cd "$TMP"
+git init --bare child-bare
+git clone child-bare child
+cd child
+echo a >> a
+git add -A
+git commit -m created
+echo b >> a
+git add -A
+git commit -m changed
+git push
+CHILDREV="$(git rev-parse HEAD)"
+
+cd "$TMP"
+git init parent
+cd parent
+
+config() {
+  git config --file "$1" "$2"
+}
+
+log-message() {
+  git log -1 --pretty=format:%s "${1:-HEAD}"
+}
+
+# Import into empty parent repo
+XPREVHEAD=""
+git srepo import x ../child
+XCFG="x/.subrepo/config"
+
+check-initial-x() {
+  fail-if "log message incorrect" equals "$(log-message)" "Imported x from ../child"
+
+  fail-if "x files are different" diff -w x/a ../child/a
+
+  fail-if "x remoterev is incorrect" \
+    equals "$(config "$XCFG" subrepo.remoterev)" "$CHILDREV"
+
+  fail-if "x localrev is incorrect" \
+    equals "$(config "$XCFG" subrepo.localrev)" "$XPREVHEAD"
+}
+check-initial-x
+
+# Ensure pull doesn't change anything
+YPREVHEAD="$(git rev-parse HEAD)"
+git srepo pull x
+fail-if "pull x has changed something" equals "$(git rev-parse HEAD)" "$YPREVHEAD"
+check-initial-x
+
+git srepo import y/c ../child
+YCFG="y/c/.subrepo/config"
+
+fail-if "log message incorrect" equals "$(log-message)" "Imported y/c from ../child"
+
+fail-if "y files are different" diff -w y/c/a ../child/a
+
+fail-if "y remoterev is incorrect" \
+  equals "$(config "$YCFG" subrepo.remoterev)" "$CHILDREV"
+
+fail-if "y localrev is incorrect" \
+  equals "$(config "$YCFG" subrepo.localrev)" "$YPREVHEAD"
+
+cd "$TMP/child"
+echo b >> a
+git add -A
+git commit -m more
+git push
+NEWCHILDREV="$(git rev-parse HEAD)"
+
+cd "$TMP/parent"
+XPREVHEAD="$(git rev-parse HEAD)"
+git srepo pull x
+
+check-changed-x() {
+  fail-if "log message incorrect" equals "$(log-message)" "Updated x from ../child"
+
+  fail-if "x files are different" diff -w x/a ../child/a
+
+  fail-if "x remoterev is incorrect" \
+    equals "$(config "$XCFG" subrepo.remoterev)" "$NEWCHILDREV"
+
+  fail-if "x localrev is incorrect" \
+    equals "$(config "$XCFG" subrepo.localrev)" "$XPREVHEAD"
+}
+check-changed-x
+PREVHEAD="$(git rev-parse HEAD)"
+git srepo pull x
+fail-if "second pull x has changed something" \
+  equals "$(git rev-parse HEAD)" "$PREVHEAD"
+check-changed-x
+
+echo "All tests passed"
