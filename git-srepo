@@ -258,10 +258,10 @@ build() {
     echo "Import new changes"
     local localrev="$(git config --file="$cfg" subrepo.localrev)"
     [ "$localrev" ] &&
-      git filter-branch -f --parent-filter "grep -v $localrev || true" -- \
-                        "$localrev"..HEAD
-    git filter-branch -f --subdirectory-filter "$subdir"
-    git filter-branch -f --tree-filter "rm -rf .subrepo"
+      git filter-branch -f --parent-filter "grep -v $localrev || true" \
+                           --subdirectory-filter "$subdir" \
+                           --tree-filter "rm -rf .subrepo" \
+                           -- "$localrev"..HEAD
 
     local torebase="$(git rev-list HEAD | count-lines)"
     [ "$torebase" -gt "1" ] && {
