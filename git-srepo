@@ -198,7 +198,7 @@ build() {
   local remote="$(cd "$remotepath" &> /dev/null && pwd || echo "$remotepath")"
   local branch="master"
 
-  local hasconfig=false
+  local hasconfig=
   [ -e "$cfg" ] &&
     hasconfig=true
 
@@ -301,7 +301,7 @@ build() {
 
   # Commit changes
   git add -A "$subdir"
-  local action="Added"
+  local action="Imported"
   [ "$hasconfig" ] &&
     action="Updated"
   git commit -m "$action $subdir from $remotepath"
