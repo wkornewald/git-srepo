@@ -195,6 +195,7 @@ build() {
   local remotepath="${2:-$(git config --file="$cfg" subrepo.remote)}"
   local revision="${3:-$(git config --file="$cfg" subrepo.revision)}"
   local interactive="${4:-}"
+  local remote="$(cd "$remotepath" &> /dev/null && pwd || echo "$remotepath")"
   local branch="master"
 
   local hasconfig=false
@@ -224,7 +225,6 @@ build() {
   git branch -d -q "$orig_branch"
 
   # Add remote tracking branch containing our rebased changes on top ($branch)
-  local remote="$(cd "$remotepath" &> /dev/null && pwd || echo "$remotepath")"
   git remote add origin "$remote"
   git fetch -q origin "$revision"
   local fetch_head="$(git rev-parse FETCH_HEAD)"
