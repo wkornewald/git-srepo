@@ -18,14 +18,25 @@ equals() {
   return 1
 }
 
+ORIG_PWD="$(pwd)"
 TMP="$(mktemp -d /tmp/srepoXXXXXXXXX)"
 cleanup() {
+  cd "$ORIG_PWD"
   rm -rf "$TMP"
 }
 trap cleanup INT TERM EXIT
 
 cd "$TMP"
+
+# Workaround for tmp Windows paths ending with "~1" in bash emulation
+git init workaround
+cd workaround
+TMP="$(dirname "$(git rev-parse --show-toplevel)")"
+cd "$TMP"
+rm -rf workaround
+
 git init --bare child-bare
+git init --bare other-bare
 git clone child-bare child
 cd child
 echo a >> a
@@ -34,7 +45,8 @@ git commit -m created
 echo b >> a
 git add -A
 git commit -m changed
-git push
+git push ../child-bare master
+git push ../other-bare master
 CHILDREV="$(git rev-parse HEAD)"
 
 cd "$TMP"
@@ -51,11 +63,12 @@ log-message() {
 
 # Import into empty parent repo
 XPREVHEAD=""
-git srepo import x ../child
+git srepo import x ../child-bare
 XCFG="x/.subrepo/config"
 
 check-initial-x() {
-  fail-if "log message incorrect" equals "$(log-message)" "Imported x from ../child"
+  fail-if "log message incorrect" \
+    equals "$(log-message)" "Imported x from ../child-bare"
 
   fail-if "x files are different" diff -w x/a ../child/a
 
@@ -73,12 +86,13 @@ git srepo pull x
 fail-if "pull x has changed something" equals "$(git rev-parse HEAD)" "$YPREVHEAD"
 check-initial-x
 
-git srepo import y/c ../child
-YCFG="y/c/.subrepo/config"
+git srepo import s/y ../other-bare
+YCFG="s/y/.subrepo/config"
 
-fail-if "log message incorrect" equals "$(log-message)" "Imported y/c from ../child"
+fail-if "log message incorrect" \
+  equals "$(log-message)" "Imported s/y from ../other-bare"
 
-fail-if "y files are different" diff -w y/c/a ../child/a
+fail-if "y files are different" diff -w s/y/a ../child/a
 
 fail-if "y remoterev is incorrect" \
   equals "$(config "$YCFG" subrepo.remoterev)" "$CHILDREV"
@@ -98,7 +112,8 @@ XPREVHEAD="$(git rev-parse HEAD)"
 git srepo pull x
 
 check-changed-x() {
-  fail-if "log message incorrect" equals "$(log-message)" "Updated x from ../child"
+  fail-if "log message incorrect" \
+    equals "$(log-message)" "Updated x from ../child-bare"
 
   fail-if "x files are different" diff -w x/a ../child/a
 
@@ -114,5 +129,12 @@ git srepo pull x
 fail-if "second pull x has changed something" \
   equals "$(git rev-parse HEAD)" "$PREVHEAD"
 check-changed-x
+
+# Test for unrelated pull not changing anything
+git srepo pull s/y
+fail-if "y localrev is incorrect after pull x and pull s/y" \
+  equals "$(config "$YCFG" subrepo.localrev)" "$YPREVHEAD"
+fail-if "second pull y has changed something" \
+  equals "$(git rev-parse HEAD)" "$PREVHEAD"
 
 echo "All tests passed"
