@@ -88,7 +88,7 @@ export() {
 }
 
 pull_help="\
-git $NAME pull <directory> [revision]
+git $NAME pull <directory> [repository] [revision]
 
 Pull new changes from imported repository.
 
@@ -97,17 +97,18 @@ You can optionally choose a specific revision/tag or branch.
 --
 "
 pull_min_args=1
-pull_max_args=2
+pull_max_args=3
 pull() {
   local subdir="$1"
-  local revision="${2:-}"
+  local repository="${2:-}"
+  local revision="${3:-}"
 
   [ ! -e "$subdir" ] &&
     die "Directory '$subdir' doesn't exist"
   local datadir="$ROOT/$subdir/.subrepo"
   local cfg="$datadir/config"
 
-  build "$subdir" "" "$revision"
+  build "$subdir" "$repository" "$revision"
 }
 
 push_help="\
