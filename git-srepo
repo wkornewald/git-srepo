@@ -185,7 +185,9 @@ build() {
   # * revision
   # * interactive: bool (optional)
 
-  [ "$ORIG_PWD" != "$(cd "$ROOT" && pwd)" ] &&
+  # Workaround for Windows paths sometimes starting with
+  # "/c/..." instead of "C:/..."
+  [ "$ORIG_PWD" != "$ROOT" ] && [ "$ORIG_PWD" != "$(cd "$ROOT" && pwd)" ] &&
     die "You must run this command from your repo root folder."
 
   # Replace \ with / in case we're on Windows
