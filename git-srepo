@@ -177,14 +177,11 @@ list() {
 build() {
   # Builds branch with our private changes rebased on top.
   # Also imports new subtree into project.
-  # We use an --interactive rebase because the rebased changes should stay
-  # clean, so they can later easily be contributed upstream.
 
   # Args:
   # * subdir
   # * remote repo URL
   # * revision
-  # * interactive: bool (optional)
 
   # Workaround for Windows paths sometimes starting with
   # "/c/..." instead of "C:/..."
@@ -201,7 +198,6 @@ build() {
   local patch="$datadir/patch"
   local remotepath="${2:-$(git config --file="$cfg" subrepo.remote)}"
   local revision="${3:-$(git config --file="$cfg" subrepo.revision)}"
-  local interactive="${4:-}"
   local remote="$(cd "$remotepath" &> /dev/null && pwd || echo "$remotepath")"
   local branch="master"
 
@@ -247,8 +243,7 @@ build() {
   # If $subdir exists we import its changes into $branch
   if [ -e "$subdir" ]; then
     local unchanged_head="$(git config --file="$cfg" subrepo.remoterev)"
-    [ "$CMD" = "pull" ] && [ "$fetch_head" = "$unchanged_head" ] &&
-        [ ! "$interactive" ] && {
+    [ "$CMD" = "pull" ] && [ "$fetch_head" = "$unchanged_head" ] && {
       echo "No changes found"
       return
     }
@@ -259,7 +254,7 @@ build() {
       git clean -f -d -q
       git am "$patch"
       unchanged_head="$(git rev-parse HEAD)"
-      if [ "$remoterev" != "$fetch_head" ] || [ "$interactive" ]; then
+      if [ "$remoterev" != "$fetch_head" ]; then
         rebase --onto "$branch" "$remoterev" HEAD
       fi
       git branch -f -q "$branch" HEAD
@@ -330,7 +325,7 @@ build() {
 }
 
 rebase() {
-  git rebase --interactive --merge "$@" || {
+  git rebase --merge "$@" || {
     while true; do
       echo
       echo "Exit this subshell once you're finished to continue $NAME $CMD."
