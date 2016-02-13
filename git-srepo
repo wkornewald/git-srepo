@@ -306,7 +306,7 @@ build() {
   git read-tree -u --prefix "$subdir" FETCH_HEAD
   mkdir -p "$datadir"
   cd "$tmp_repo"
-  git format-patch -k --stdout --binary "$fetch_head..$branch" > "$patch"
+  git format-patch -k --stdout --binary "$fetch_head..$branch" | converteol > "$patch"
   [ ! -s "$patch" ] &&
     rm -f "$patch"
   cd "$ROOT"
@@ -369,6 +369,14 @@ get-branch() {
 
 count-lines() {
   grep -c $'\n'
+}
+
+EOLCONVERTER=cat
+[ "$OSTYPE" = "msys" ] && {
+  EOLCONVERTER=dos2unix
+}
+converteol() {
+  "$EOLCONVERTER"
 }
 
 die() {
