@@ -270,14 +270,16 @@ build() {
     # Check if subdir has a parent revision (localrev), at all.
     # There is no parent on first export or after import into an empty repo.
     if [ "$localrev" ]; then
-      git filter-branch -f --parent-filter "grep -v $localrev || true" \
-                           --subdirectory-filter "$subdir" \
-                           --tree-filter "rm -rf .subrepo" \
-                           -- "$localrev"..HEAD
+      git filter-branch -f --prune-empty \
+          --parent-filter "grep -v $localrev || true" \
+          --subdirectory-filter "$subdir" \
+          --index-filter 'git rm -r --ignore-unmatch --cached .subrepo' \
+          -- "$localrev"..HEAD
     else
-      git filter-branch -f --subdirectory-filter "$subdir" \
-                           --tree-filter "rm -rf .subrepo" \
-                           -- HEAD
+      git filter-branch -f --prune-empty \
+          --subdirectory-filter "$subdir" \
+          --index-filter 'git rm -r --ignore-unmatch --cached .subrepo' \
+          -- HEAD
     fi
 
     local torebase="$(git rev-list HEAD | count-lines)"
