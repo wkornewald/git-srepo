@@ -147,7 +147,15 @@ push() {
     rm -rf "$patch"
     git config --file="$cfg" subrepo.remoterev "$remoterev"
     git add -A -- "$subdir"
-    git commit --amend --no-edit
+    if $made_commit; then
+      git commit --amend --no-edit
+    else
+      # Replace \ with / in case we're on Windows
+      subdir="${subdir//\\//}"
+      # Strip trailing slashes
+      subdir="${subdir%/}"
+      git commit -m "Pushed $subdir to $(git config --file="$cfg" subrepo.remote)"
+    fi
   }
 }
 
@@ -200,6 +208,7 @@ build() {
   local revision="${3:-$(git config --file="$cfg" subrepo.revision)}"
   local remote="$(cd "$remotepath" &> /dev/null && pwd || echo "$remotepath")"
   local branch="master"
+  made_commit=false
 
   local hasconfig=
   [ -e "$cfg" ] &&
@@ -266,29 +275,19 @@ build() {
     }
 
     echo "Import new changes"
-    local localrev="$(git config --file="$cfg" subrepo.localrev)"
-    # Check if subdir has a parent revision (localrev), at all.
-    # There is no parent on first export or after import into an empty repo.
-    if [ "$localrev" ]; then
-      git filter-branch -f --prune-empty \
-          --parent-filter "grep -v $localrev || true" \
-          --subdirectory-filter "$subdir" \
-          --index-filter 'git rm -r --ignore-unmatch --cached .subrepo' \
-          -- "$localrev"..HEAD
-    else
-      git filter-branch -f --prune-empty \
-          --subdirectory-filter "$subdir" \
-          --index-filter 'git rm -r --ignore-unmatch --cached .subrepo' \
-          -- HEAD
-    fi
+    git filter-branch -f --prune-empty \
+        --subdirectory-filter "$subdir" \
+        --index-filter 'git rm -r --ignore-unmatch --cached .subrepo' \
+        -- HEAD
 
-    local torebase="$(git rev-list HEAD | count-lines)"
-    [ "$torebase" -gt "1" ] && {
+    mergebase HEAD "$branch" ||
+      die "No common base found. You have to fix this by hand."
+
+    if [ -z "$first_on_source" ] ||  [ -z "$first_on_target" ]; then
       echo "Rebase local commits"
-      local first="$(get-first-commit HEAD)"
-      rebase --onto "$branch" "$first" HEAD
+      rebase --onto "$old_parent" "$new_parent" HEAD
       git branch -f -q "$branch" HEAD
-    }
+    fi
 
     [ "$(git rev-parse "$branch")" = "$unchanged_head" ] && {
       echo "No changes found"
@@ -315,8 +314,6 @@ build() {
   git config --file="$cfg" subrepo.remote "$remotepath"
   git config --file="$cfg" subrepo.revision "$revision"
   # Write the parent revision if we have one
-  [ "$orig_rev" != "null" ] &&
-    git config --file="$cfg" subrepo.localrev "$orig_rev"
   git config --file="$cfg" subrepo.remoterev "$fetch_head"
 
   # Commit changes
@@ -325,8 +322,111 @@ build() {
   [ "$hasconfig" ] &&
     action="Updated"
   git commit -m "$action $subdir from $remotepath"
+  made_commit=true
 
   echo "Done"
+}
+
+mergebase_help="\
+git $NAME mergebase source target
+--
+"
+mergebase_min_args=2
+mergebase_max_args=3
+mergebase() {
+  local merge_base_order=()
+  local counter=0
+  # If you only want to list all possible ancestors
+  local list_all="${3:-false}"
+  local source="source"
+  local target="target"
+
+  prepare-merge-base "$source" "$1" true
+  local first_commit_on_source="$branch_first_commit"
+  prepare-merge-base "$target" "$2" false
+  local first_commit_on_target="$branch_first_commit"
+
+  for entry in ${merge_base_order[@]}; do
+    local source_key="${source}_$entry"
+    local source_value="${!source_key}"
+    if [[ ${#source_value} -gt 40 ]]; then
+      if $list_all; then
+        echo "Multiple on $1: $source_value"
+      fi
+    else
+      local target_key="${target}_$entry"
+      if [ -z ${!target_key+x} ]; then
+        # We didn't find it on the target side
+        :
+      else
+        local target_value=${!target_key};
+        if [[ ${#target_value} -gt 40 ]]; then
+          if $list_all; then
+            echo "Multiple on $2: $target_value"
+          fi
+        else
+          echo "Found ancestor: ${!source_key},${!target_key}"
+          echo "Steps from HEAD: $counter"
+          new_parent="${!source_key}"
+          old_parent="${!target_key}"
+          if [[ $new_parent == $first_commit_on_source ]]; then
+            first_on_source="HEAD"
+          else
+            first_on_source=""
+          fi
+          if [[ $old_parent == $first_commit_on_target ]]; then
+            first_on_target="HEAD"
+          else
+            first_on_target=""
+          fi
+
+          if $list_all; then
+            echo "Valid: $new_parent = $old_parent"
+          else
+            # We found the first ancestor
+            return 0
+          fi
+        fi
+      fi
+    fi
+    counter=$((counter + 1))
+  done
+  echo "No ancestor found";
+  return 1
+}
+
+prepare-merge-base() {
+  local prefix="$1"
+  local data=$(log-tree "$2")
+  local first_commit=
+
+  for entry in $data; do
+    local array=(${entry//:/ })
+    local commit=${array[0]}
+    local tree=${array[1]}
+    local key="${prefix}_$tree"
+
+    if [ -z "$first_commit" ]; then
+      first_commit=$commit
+    fi
+
+    if [ -z ${!key+x} ]; then
+      eval "$key=$commit";
+    else
+      eval "$key=${!key}_$commit";
+    fi
+    if $3; then
+      # Store the commit order
+      # This is used when we find the the first common ancestor
+      merge_base_order+=("$tree");
+    fi
+  done
+
+  branch_first_commit=$first_commit
+}
+
+log-tree() {
+  git log --pretty=format:%H:%T "$1"
 }
 
 rebase() {
@@ -443,7 +543,7 @@ main() {
   local cmd="$1"
   shift
   case "$cmd" in
-    pull|push|import|export|list) run "$cmd" "$@" ;;
+    pull|push|import|export|list|mergebase) run "$cmd" "$@" ;;
     help)
       [ $# -ne 1 ] && {
         [ $# -gt 1 ] &&

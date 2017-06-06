@@ -59,8 +59,11 @@ really annoying if your IDE closed all your files during a pull.
 
 Why?
 ----
-None of the existing solutions allowed maintaining your changes in a way
-that allows easy upstream contribution.
+None of the other solutions allows maintaining your changes in a way that
+allows easy upstream contribution through a linear, rebased set of patches.
+This is the main problem I want to solve.
+
+Additionally, the other solutions have these issues:
 
 With git subtree your history gets polluted. See here for more details:
 https://medium.com/@porteneuve/mastering-git-subtrees-943d29a798ec
@@ -78,11 +81,6 @@ With git subrepo, pulls can lose your local changes. This bug might also exist
 in git stree. Also, with git subrepo, the subrepo gets checked out within your
 project repository on every subrepo pull. This breaks your IDE and any build
 scripts watching your repo, as described above.
-
-Apart from that, the way this extension works in order to maintain a clean set
-of rebased patches is very different from the way the other extensions work.
-I would've loved to contribute back (especially to git subrepo), but it just
-wasn't practical.
 
 Contributing
 ------------

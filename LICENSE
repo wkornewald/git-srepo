@@ -1,6 +1,7 @@
 The MIT License (MIT)
 
-Copyright (c) 2016 Waldemar Kornewald
+Copyright (c) 2017 Waldemar Kornewald
+Note: The merge-base algorithm was taken from git-subrepo.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
