@@ -283,7 +283,7 @@ build() {
     mergebase HEAD "$branch" ||
       die "No common base found. You have to fix this by hand."
 
-    if [ -z "$first_on_source" ] ||  [ -z "$first_on_target" ]; then
+    if { [ -z "$first_on_source" ] || [ -z "$first_on_target" ]; } && [ "$new_parent" != "$(git rev-parse HEAD)" ]; then
       echo "Rebase local commits"
       rebase --onto "$old_parent" "$new_parent" HEAD
       git branch -f -q "$branch" HEAD
@@ -445,16 +445,6 @@ rebase() {
 rebase-done() {
   local dir="$(get-git-dir)"
   [ ! -e "$dir/rebase-apply" ] && [ ! -e "$dir/rebase-merge" ]
-}
-
-get-first-commit() {
-  local rev="$1"
-  local path="${2:-}"
-
-  local args=
-  [ ! "$path" ] &&
-    args=--max-parents=0
-  git rev-list "$args" "$rev" -- "$path" | tail -1
 }
 
 get-git-dir() {
