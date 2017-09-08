@@ -15,29 +15,41 @@ Just add the git-srepo script to your PATH.
 Supported platforms: Linux, OS X, and Windows.
 
 ## Examples
-Import d3 repository into lib/d3 folder::
+Import d3 repository into lib/d3 folder:
 
-  git srepo import lib/d3 https://github.com/mbostock/d3
+```sh
+git srepo import lib/d3 https://github.com/mbostock/d3
+```
 
-Pull new changes::
+Pull new changes:
 
-  git srepo pull lib/d3
+```sh
+git srepo pull lib/d3
+```
 
-Push your changes::
+Push your changes:
 
-  git srepo push lib/d3
+```sh
+git srepo push lib/d3
+```
 
-Push your changes to custom repo::
+Push your changes to custom repo:
 
-  git srepo push lib/d3 https://github.com/myaccount/d3 master
+```sh
+git srepo push lib/d3 https://github.com/myaccount/d3 master
+```
 
-Export a folder into a separate repo::
+Export a folder into a separate repo:
 
-  git srepo export src/mylib https://github.com/myaccount/mylib master
+```sh
+git srepo export src/mylib https://github.com/myaccount/mylib master
+```
 
-List imported repositories::
+List imported repositories:
 
-  git srepo list
+```sh
+git srepo list
+```
 
 ## More details
 This extension maintains a linear, rebased set of your local changes, so there
