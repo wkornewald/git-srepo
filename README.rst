@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/allbuttonspressed/git-srepo.svg?branch=master)](https://travis-ci.org/allbuttonspressed/git-srepo)
+
 git-srepo
 =========
 Import other repositories into your git repository.
