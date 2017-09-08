@@ -77,14 +77,23 @@ export_max_args=3
 export() {
   local subdir="$1"
   local remote="$2"
-  local branch="${3:-master}"
+  local revision="${3:-master}"
 
   [ ! -e "$subdir" ] &&
     die "Directory '$subdir' doesn't exist"
 
   # TODO: just save config? which remote revision do we use? do we have to push here?
-  # remote revision is $branch of $tmp_repo
-  die "Not yet implemented"
+  # remote revision is $revision of $tmp_repo
+  local datadir="$ROOT/$subdir/.subrepo"
+  local cfg="$datadir/config"
+  [ -e "$datadir" ] &&
+    die "Directory '$subdir' is already a subrepo"
+
+  build "$subdir" "$remote" "$revision"
+  local tmp_repo="$ROOT/.git/.subrepo/$subdir"
+  cd "$tmp_repo"
+  ls
+  git push -u origin "$revision"
 }
 
 pull_help="\
@@ -220,7 +229,7 @@ build() {
   [ -e "$subdir" ] && {
     [ "$(git status --short -- "$subdir")" ] &&
       die "You have uncommited changes in '$subdir'"
-    [ ! -e "$cfg" ] &&
+    [ ! -e "$cfg" ] && [ "$CMD" != "export" ] &&
       die "'$subdir' has no config"
   }
 
@@ -246,11 +255,14 @@ build() {
   # Add remote tracking branch containing our rebased changes on top ($branch)
   git remote add origin "$remote" 2> /dev/null ||
     git remote set-url origin "$remote"
-  git fetch -q origin "$revision"
-  local fetch_head="$(git rev-parse FETCH_HEAD)"
-  # Don't switch to branch, yet. We'll import current revision's changes below
-  git branch -q "$branch" "$fetch_head"
-  git branch -q -u "origin/$branch" "$branch"
+  local fetch_head=
+  if [ "$CMD" != "export" ]; then
+    git fetch -q origin "$revision"
+    fetch_head="$(git rev-parse FETCH_HEAD)"
+    # Don't switch to branch, yet. We'll import current revision's changes below
+    git branch -q "$branch" "$fetch_head"
+    git branch -q -u "origin/$branch" "$branch"
+  fi
 
   # If $subdir exists we import its changes into $branch
   if [ -e "$subdir" ]; then
@@ -280,19 +292,24 @@ build() {
         --index-filter 'git rm -r --ignore-unmatch --cached .subrepo' \
         -- HEAD
 
-    mergebase HEAD "$branch" ||
-      die "No common base found. You have to fix this by hand."
-
-    if { [ -z "$first_on_source" ] || [ -z "$first_on_target" ]; } && [ "$new_parent" != "$(git rev-parse HEAD)" ]; then
-      echo "Rebase local commits"
-      rebase --onto "$old_parent" "$new_parent" HEAD
+    if [ "$CMD" = "export" ]; then
+      fetch_head="$(git rev-parse HEAD)"
       git branch -f -q "$branch" HEAD
-    fi
+    else
+      mergebase HEAD "$branch" ||
+        die "No common base found. You have to fix this by hand."
 
-    [ "$(git rev-parse "$branch")" = "$unchanged_head" ] && {
-      echo "No changes found"
-      return
-    }
+      if { [ -z "$first_on_source" ] || [ -z "$first_on_target" ]; } && [ "$new_parent" != "$(git rev-parse HEAD)" ]; then
+        echo "Rebase local commits"
+        rebase --onto "$old_parent" "$new_parent" HEAD
+        git branch -f -q "$branch" HEAD
+      fi
+
+      [ "$(git rev-parse "$branch")" = "$unchanged_head" ] && {
+        echo "No changes found"
+        return
+      }
+    fi
   fi
 
   git checkout -f -q "$branch"
@@ -318,10 +335,12 @@ build() {
 
   # Commit changes
   git add -A "$subdir"
-  local action="Imported"
+  local msg="Imported $subdir from $remotepath"
   [ "$hasconfig" ] &&
-    action="Updated"
-  git commit -m "$action $subdir from $remotepath"
+    msg="Updated $subdir from $remotepath"
+  [ "$CMD" = "export" ] &&
+    msg="Exported $subdir to $remotepath"
+  git commit -m "$msg"
   made_commit=true
 
   echo "Done"

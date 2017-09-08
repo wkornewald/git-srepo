@@ -52,7 +52,6 @@ CHILDREV="$(git rev-parse HEAD)"
 
 cd "$TMP"
 git init parent
-cd parent
 
 config() {
   git config --file "$1" "$2"
@@ -62,7 +61,23 @@ log-message() {
   git log -1 --pretty=format:%s "${1:-HEAD}"
 }
 
-# Import into empty parent repo
+cd "$TMP/parent"
+
+# Test export
+mkdir module
+echo f > module/f
+git add -A
+git commit -m module
+git init --bare "$TMP/module-bare"
+git srepo export module "$TMP/module-bare"
+git clone "$TMP/module-bare" "$TMP/module"
+cd "$TMP/module"
+fail-if "Export failed" \
+  equals "$(cat f)" "f"
+
+cd "$TMP/parent"
+
+# Test import
 XPREVHEAD=""
 git srepo import x ../child-bare
 XCFG="x/.subrepo/config"
