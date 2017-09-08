@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail
+set -eu -o pipefail
 
 # Get name of this script without the "git-" prefix
 NAME=$(basename "$0")
@@ -167,7 +167,8 @@ List imported repositories.
 "
 list_max_args=0
 list() {
-  local paths=($(
+  local paths
+  paths=($(
     find . -name '.subrepo' |
       grep -v '/.git/' |
       grep '/.subrepo$' |
@@ -175,7 +176,6 @@ list() {
       sed 's/^.\///' |
       sort
   ))
-  subrepos=()
   local path
   for path in "${paths[@]}"; do
     echo "$path"

@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail
+set -eu -o pipefail
 
 die() {
   printf '"%s" ' Error: "$@" 1>&2
@@ -21,6 +21,7 @@ equals() {
 ORIG_PWD="$(pwd)"
 TMP="$(mktemp -d /tmp/srepoXXXXXXXXX)"
 cleanup() {
+  # Ensure we're not in $TMP
   cd "$ORIG_PWD"
   rm -rf "$TMP"
 }
@@ -74,9 +75,6 @@ check-initial-x() {
 
   fail-if "x remoterev is incorrect" \
     equals "$(config "$XCFG" subrepo.remoterev)" "$CHILDREV"
-
-  fail-if "x localrev is incorrect" \
-    equals "$(config "$XCFG" subrepo.localrev)" "$XPREVHEAD"
 }
 check-initial-x
 
@@ -97,9 +95,6 @@ fail-if "y files are different" diff -w s/y/a ../child/a
 fail-if "y remoterev is incorrect" \
   equals "$(config "$YCFG" subrepo.remoterev)" "$CHILDREV"
 
-fail-if "y localrev is incorrect" \
-  equals "$(config "$YCFG" subrepo.localrev)" "$YPREVHEAD"
-
 cd "$TMP/child"
 echo b >> a
 git add -A
@@ -119,9 +114,6 @@ check-changed-x() {
 
   fail-if "x remoterev is incorrect" \
     equals "$(config "$XCFG" subrepo.remoterev)" "$NEWCHILDREV"
-
-  fail-if "x localrev is incorrect" \
-    equals "$(config "$XCFG" subrepo.localrev)" "$XPREVHEAD"
 }
 check-changed-x
 PREVHEAD="$(git rev-parse HEAD)"
@@ -132,8 +124,6 @@ check-changed-x
 
 # Test for unrelated pull not changing anything
 git srepo pull s/y
-fail-if "y localrev is incorrect after pull x and pull s/y" \
-  equals "$(config "$YCFG" subrepo.localrev)" "$YPREVHEAD"
 fail-if "second pull y has changed something" \
   equals "$(git rev-parse HEAD)" "$PREVHEAD"
 
