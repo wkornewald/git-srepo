@@ -1,7 +1,6 @@
 [![Build Status](https://travis-ci.org/allbuttonspressed/git-srepo.svg?branch=master)](https://travis-ci.org/allbuttonspressed/git-srepo)
 
-git-srepo
-=========
+# git-srepo
 Import other repositories into your git repository.
 This is a simpler alternative to git subtree, submodule, stree, and subrepo.
 
@@ -10,14 +9,12 @@ them to the imported repo.
 Local changes are maintained as a clean, rebased set of patches for upstream
 contribution.
 
-Installation
-------------
+## Installation
 Just add the git-srepo script to your PATH.
 
 Supported platforms: Linux, OS X, and Windows.
 
-Examples
---------
+## Examples
 Import d3 repository into lib/d3 folder::
 
   git srepo import lib/d3 https://github.com/mbostock/d3
@@ -42,8 +39,7 @@ List imported repositories::
 
   git srepo list
 
-More details
-------------
+## More details
 This extension maintains a linear, rebased set of your local changes, so there
 won't be any merge commits, etc.
 This is important because most projects won't accept your patches unless
@@ -59,8 +55,7 @@ This is important because you'll most likely have existing software (an IDE,
 a build script, etc.) monitoring your repository for changes. It would be
 really annoying if your IDE closed all your files during a pull.
 
-Why?
-----
+## Why?
 None of the other solutions allows maintaining your changes in a way that
 allows easy upstream contribution through a linear, rebased set of patches.
 This is the main problem I want to solve.
@@ -84,7 +79,6 @@ in git stree. Also, with git subrepo, the subrepo gets checked out within your
 project repository on every subrepo pull. This breaks your IDE and any build
 scripts watching your repo, as described above.
 
-Contributing
-------------
+## Contributing
 Contributions are always welcome. Just create a fork of this repo and send a
 pull request. Thank you. :)
