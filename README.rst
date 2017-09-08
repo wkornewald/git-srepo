@@ -8,11 +8,11 @@ them to the imported repo.
 Local changes are maintained as a clean, rebased set of patches for upstream
 contribution.
 
-TODO: You can also export an existing folder into a separate repo.
-
 Installation
 ------------
 Just add the git-srepo script to your PATH.
+
+Supported platforms: Linux, OS X, and Windows.
 
 Examples
 --------
@@ -32,7 +32,7 @@ Push your changes to custom repo::
 
   git srepo push lib/d3 https://github.com/myaccount/d3 master
 
-TODO: Export a folder into a separate repo::
+Export a folder into a separate repo::
 
   git srepo export src/mylib https://github.com/myaccount/mylib master
 
