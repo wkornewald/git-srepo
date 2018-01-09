@@ -21,28 +21,28 @@ Import d3 repository into lib/d3 folder:
 git srepo import lib/d3 https://github.com/mbostock/d3
 ```
 
+Export a folder into a new repo (also converts that folder to a subrepo):
+
+```sh
+git srepo export src/mylib https://github.com/myaccount/mylib master
+```
+
 Pull new changes:
 
 ```sh
 git srepo pull lib/d3
 ```
 
-Push your changes:
+Build imported subrepo into .git/.subrepo/lib/d3 (so you can pull/push, for example):
 
 ```sh
-git srepo push lib/d3
+git srepo build lib/d3
 ```
 
-Push your changes to custom repo:
+Load your subrepo state from .git/.subrepo/lib/d3 into the project (e.g. after you pull):
 
 ```sh
-git srepo push lib/d3 https://github.com/myaccount/d3 master
-```
-
-Export a folder into a separate repo:
-
-```sh
-git srepo export src/mylib https://github.com/myaccount/mylib master
+git srepo load lib/d3
 ```
 
 List imported repositories:

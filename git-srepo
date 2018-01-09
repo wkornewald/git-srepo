@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -eu -o pipefail
 
 # Get name of this script without the "git-" prefix
@@ -19,8 +19,8 @@ Commands:
 
   import    Import a remote repository into a local subdirectory
   export    Export a subdirectory into a remote repository
-  pull      Pull remote changes
-  push      Push local changes to remote
+  build     Builds subrepo
+  load      Loads current working dir from subrepo into parent repository
   list      List imported repositories
 
   help      Documentation for specific command
@@ -60,7 +60,8 @@ import() {
   [ -e "$subdir" ] &&
     die "Directory '$subdir' already exists. Please remove it first."
 
-  build "$subdir" "$remote" "$revision"
+  _build "$subdir" "$remote" "$revision"
+  load "$subdir" "$remote" "$revision"
 }
 
 export_help="\
@@ -82,90 +83,21 @@ export() {
   [ ! -e "$subdir" ] &&
     die "Directory '$subdir' doesn't exist"
 
-  # TODO: just save config? which remote revision do we use? do we have to push here?
+  # TODO: just save config? which remote revision do we use?
   # remote revision is $revision of $tmp_repo
   local datadir="$ROOT/$subdir/.subrepo"
   local cfg="$datadir/config"
   [ -e "$datadir" ] &&
     die "Directory '$subdir' is already a subrepo"
 
-  build "$subdir" "$remote" "$revision"
+  _build "$subdir" "$remote" "$revision"
+
   local tmp_repo="$ROOT/.git/.subrepo/$subdir"
   cd "$tmp_repo"
-  ls
   git push -u origin "$revision"
-}
 
-pull_help="\
-git $NAME pull <directory> [repository] [revision]
-
-Pull new changes from imported repository.
-
-By default, this pulls from previously pulled/imported branch/revision/tag.
-You can optionally choose a specific revision/tag or branch.
---
-"
-pull_min_args=1
-pull_max_args=3
-pull() {
-  local subdir="$1"
-  local repository="${2:-}"
-  local revision="${3:-}"
-
-  [ ! -e "$subdir" ] &&
-    die "Directory '$subdir' doesn't exist"
-  local datadir="$ROOT/$subdir/.subrepo"
-  local cfg="$datadir/config"
-
-  build "$subdir" "$repository" "$revision"
-}
-
-push_help="\
-git $NAME push <directory> [repository] [branch]
-
-Push new changes to remote repository.
-
-By default, this pushes to previously pulled/imported repository and branch.
-You can optionally choose a specific repository and branch.
---
-"
-push_min_args=1
-push_max_args=3
-push() {
-  local subdir="$1"
-  local datadir="$ROOT/$subdir/.subrepo"
-  local cfg="$datadir/config"
-  local patch="$datadir/patch"
-  local defaultbranch="$(git config --file="$cfg" subrepo.revision)"
-  local remote="${2:-origin}"
-  local branch="${3:-$defaultbranch}"
-
-  [ ! -e "$subdir" ] &&
-    die "Directory '$subdir' doesn't exist"
-
-  build "$subdir"
-
-  local tmp_repo="$ROOT/.git/.subrepo/$subdir"
-  cd "$tmp_repo"
-  git push "$remote" "master:$branch"
-
-  [ -e "$patch" ] && [ "$remote" = "origin" ] &&
-      [ "$branch" = "$defaultbranch" ] && {
-    local remoterev="$(git rev-parse master)"
-    cd "$ROOT"
-    rm -rf "$patch"
-    git config --file="$cfg" subrepo.remoterev "$remoterev"
-    git add -A -- "$subdir"
-    if $made_commit; then
-      git commit --amend --no-edit
-    else
-      # Replace \ with / in case we're on Windows
-      subdir="${subdir//\\//}"
-      # Strip trailing slashes
-      subdir="${subdir%/}"
-      git commit -m "Pushed $subdir to $(git config --file="$cfg" subrepo.remote)"
-    fi
-  }
+  cd "$ROOT"
+  load "$subdir" "$remote" "$revision"
 }
 
 list_help="\
@@ -191,9 +123,38 @@ list() {
   done
 }
 
+build_help="\
+git $NAME build <directory>
+
+Builds given sub-repository into .git/.subrepo/<directory>.
+--
+"
+build_min_args=1
+build_max_args=3
 build() {
-  # Builds branch with our private changes rebased on top.
-  # Also imports new subtree into project.
+  local subdir="$1"
+  local remote="${2:-}"
+  local revision="${3:-}"
+
+  [ ! -e "$subdir" ] &&
+    die "Directory '$subdir' doesn't exist"
+
+  local datadir="$ROOT/$subdir/.subrepo"
+  [ ! -e "$datadir" ] &&
+    die "Directory '$subdir' is not a subrepo"
+
+  _build "$subdir" "$remote" "$revision"
+
+  local tmp_repo="$ROOT/.git/.subrepo/$subdir"
+  echo
+  echo "Now you can work with the subrepo at: .git/.subrepo/$subdir"
+  echo "cd .git/.subrepo/$subdir"
+  echo "git pull --rebase"
+  echo "git push"
+}
+
+_build() {
+  # Actually builds subrepo.
 
   # Args:
   # * subdir
@@ -216,22 +177,10 @@ build() {
   local remotepath="${2:-$(git config --file="$cfg" subrepo.remote)}"
   local revision="${3:-$(git config --file="$cfg" subrepo.revision)}"
   local remote="$(cd "$remotepath" &> /dev/null && pwd || echo "$remotepath")"
-  local branch="master"
-  made_commit=false
+  local branch="$revision"
 
-  local hasconfig=
-  [ -e "$cfg" ] &&
-    hasconfig=true
-
-  [ "$(git diff --cached --name-only)" ] &&
-    die "You have staged changes. Either stash or commit them first."
-
-  [ -e "$subdir" ] && {
-    [ "$(git status --short -- "$subdir")" ] &&
-      die "You have uncommited changes in '$subdir'"
-    [ ! -e "$cfg" ] && [ "$CMD" != "export" ] &&
-      die "'$subdir' has no config"
-  }
+  [ ! -e "$cfg" ] && [ "$CMD" != "import" ] && [ "$CMD" != "export" ] &&
+    die "'$subdir' has no config"
 
   echo "Create local clone"
   local orig_rev="$(git rev-parse HEAD 2> /dev/null)"
@@ -248,39 +197,33 @@ build() {
   [ "$orig_rev" != "null" ] && {
     # Repository is not empty
     git checkout -q "$orig_rev"
-    git branch -q -f -d "$orig_branch" 2> /dev/null || true
+    ! git branch -q -f -d "$orig_branch" 2> /dev/null
   }
-  git branch -q -f -d "$branch" 2> /dev/null || true
+  ! git branch -q -f -d "$branch" 2> /dev/null
 
-  # Add remote tracking branch containing our rebased changes on top ($branch)
+  # Add remote tracking branch
   git remote add origin "$remote" 2> /dev/null ||
     git remote set-url origin "$remote"
   local fetch_head=
   if [ "$CMD" != "export" ]; then
     git fetch -q origin "$revision"
     fetch_head="$(git rev-parse FETCH_HEAD)"
-    # Don't switch to branch, yet. We'll import current revision's changes below
+    # Don't switch to branch, yet. We'll import current revision's changes below.
     git branch -q "$branch" "$fetch_head"
     git branch -q -u "origin/$branch" "$branch"
   fi
 
   # If $subdir exists we import its changes into $branch
   if [ -e "$subdir" ]; then
-    local unchanged_head="$(git config --file="$cfg" subrepo.remoterev)"
-    [ "$CMD" = "pull" ] && [ "$fetch_head" = "$unchanged_head" ] && {
-      echo "No changes found"
-      return
-    }
+    local remoterev="$(git config --file="$cfg" subrepo.remoterev)"
+    [ "$CMD" != "export" ] &&
+      git branch -f -q "$branch" "$remoterev"
+
     [ -e "$patch" ] && [ -s "$patch" ] && {
       echo "Apply known patches"
-      local remoterev="$unchanged_head"
       git checkout -f -q "$remoterev"
       git clean -f -d -q
       git am "$patch"
-      unchanged_head="$(git rev-parse HEAD)"
-      if [ "$remoterev" != "$fetch_head" ]; then
-        rebase --onto "$branch" "$remoterev" HEAD
-      fi
       git branch -f -q "$branch" HEAD
       git checkout -f -q "$orig_rev"
       git clean -f -d -q
@@ -293,7 +236,6 @@ build() {
         -- HEAD
 
     if [ "$CMD" = "export" ]; then
-      fetch_head="$(git rev-parse HEAD)"
       git branch -f -q "$branch" HEAD
     else
       mergebase HEAD "$branch" ||
@@ -301,19 +243,71 @@ build() {
 
       if { [ -z "$first_on_source" ] || [ -z "$first_on_target" ]; } && [ "$new_parent" != "$(git rev-parse HEAD)" ]; then
         echo "Rebase local commits"
-        rebase --onto "$old_parent" "$new_parent" HEAD
+        git rebase --onto "$old_parent" "$new_parent" HEAD
         git branch -f -q "$branch" HEAD
       fi
-
-      [ "$(git rev-parse "$branch")" = "$unchanged_head" ] && {
-        echo "No changes found"
-        return
-      }
     fi
   fi
 
   git checkout -f -q "$branch"
   git clean -f -d -q
+
+  echo "Done"
+}
+
+load_help="\
+git $NAME load <directory>
+
+Loads committed branch state from .git/.subrepo/<directory> into parent repo.
+--
+"
+load_min_args=1
+load_max_args=3
+load() {
+  # Loads subrepo into project.
+
+  # Args:
+  # * subdir
+  # * remote repo URL
+  # * revision (remote branch/tag/revision)
+
+  # Workaround for Windows paths sometimes starting with
+  # "/c/..." instead of "C:/..."
+  [ "$ORIG_PWD" != "$ROOT" ] && [ "$ORIG_PWD" != "$(cd "$ROOT" && pwd)" ] &&
+    die "You must run this command from your repo root folder."
+
+  # Replace \ with / in case we're on Windows
+  local subdir="${1//\\//}"
+  # Strip trailing slashes
+  subdir="${subdir%/}"
+
+  local datadir="$ROOT/$subdir/.subrepo"
+  local cfg="$datadir/config"
+  local patch="$datadir/patch"
+  local remotepath="${2:-$(git config --file="$cfg" subrepo.remote)}"
+  local revision="${3:-$(git config --file="$cfg" subrepo.revision)}"
+  local branch="$revision"
+
+  local hasconfig=
+  [ -e "$cfg" ] &&
+    hasconfig=true
+
+  [ "$(git diff --cached --name-only)" ] &&
+    die "You have staged changes. Either stash or commit them first."
+
+  [ -e "$subdir" ] && {
+    [ "$(git status --short -- "$subdir")" ] &&
+      die "You have uncommited changes in '$subdir'"
+    [ ! -e "$cfg" ] && [ "$CMD" != "import" ] && [ "$CMD" != "export" ] &&
+      die "'$subdir' has no config"
+  }
+
+  local tmp_repo="$ROOT/.git/.subrepo/$subdir"
+  cd "$tmp_repo"
+  git fetch -q origin "$revision"
+  mergebase "origin/$branch" "$branch" ||
+    die "No common base found. You have to fix this by hand."
+  local remoterev="$old_parent"
 
   # Import changes into project
   echo "Import into '$subdir'"
@@ -324,24 +318,27 @@ build() {
   git read-tree -u --prefix "$subdir" FETCH_HEAD
   mkdir -p "$datadir"
   cd "$tmp_repo"
-  git format-patch -k --stdout --binary "$fetch_head..$branch" | converteol > "$patch"
+  git format-patch -k --stdout --binary "$remoterev..$branch" | converteol > "$patch"
   [ ! -s "$patch" ] &&
     rm -f "$patch"
   cd "$ROOT"
   git config --file="$cfg" subrepo.remote "$remotepath"
   git config --file="$cfg" subrepo.revision "$revision"
   # Write the parent revision if we have one
-  git config --file="$cfg" subrepo.remoterev "$fetch_head"
+  git config --file="$cfg" subrepo.remoterev "$remoterev"
 
   # Commit changes
   git add -A "$subdir"
+  [ "$(git status --short -- "$subdir")" ] || {
+    echo "Nothing changed"
+    return
+  }
   local msg="Imported $subdir from $remotepath"
   [ "$hasconfig" ] &&
     msg="Updated $subdir from $remotepath"
   [ "$CMD" = "export" ] &&
     msg="Exported $subdir to $remotepath"
   git commit -m "$msg"
-  made_commit=true
 
   echo "Done"
 }
@@ -448,28 +445,6 @@ log-tree() {
   git log --pretty=format:%H:%T "$1"
 }
 
-rebase() {
-  git rebase --merge "$@" || {
-    while true; do
-      echo
-      echo "Exit this subshell once you're finished to continue $NAME $CMD."
-      bash --rcfile <(echo "PS1='(rebasing): '") -i
-      rebase-done && break || true
-      git rebase --continue && break
-    done
-  }
-  rebase-done || die "Error: you haven't finished the rebase"
-}
-
-rebase-done() {
-  local dir="$(get-git-dir)"
-  [ ! -e "$dir/rebase-apply" ] && [ ! -e "$dir/rebase-merge" ]
-}
-
-get-git-dir() {
-  echo "$(get-root)/.git"
-}
-
 get-root() {
   git rev-parse --show-toplevel
 }
@@ -552,7 +527,7 @@ main() {
   local cmd="$1"
   shift
   case "$cmd" in
-    pull|push|import|export|list|mergebase) run "$cmd" "$@" ;;
+    build|load|import|export|list|mergebase) run "$cmd" "$@" ;;
     help)
       [ $# -ne 1 ] && {
         [ $# -gt 1 ] &&
