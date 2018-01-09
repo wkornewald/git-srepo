@@ -1,11 +1,14 @@
 [![Build Status](https://travis-ci.org/allbuttonspressed/git-srepo.svg?branch=master)](https://travis-ci.org/allbuttonspressed/git-srepo)
 
 # git-srepo
-Import other repositories into your git repository.
+Integrate other repositories into your git repository.
 This is a simpler alternative to git subtree, submodule, stree, and subrepo.
 
-Commits to an imported repo are kept within your project repo until you push
-them to the imported repo.
+What problem git-srepo solves:
+
+
+Commits to an imported subrepo are kept within your project repo until you push
+them to the subrepo.
 Local changes are maintained as a clean, rebased set of patches for upstream
 contribution.
 
@@ -25,12 +28,6 @@ Export a folder into a new repo (also converts that folder to a subrepo):
 
 ```sh
 git srepo export src/mylib https://github.com/myaccount/mylib master
-```
-
-Pull new changes:
-
-```sh
-git srepo pull lib/d3
 ```
 
 Build imported subrepo into .git/.subrepo/lib/d3 (so you can pull/push, for example):
@@ -61,8 +58,7 @@ All state (including the rebased set of patches!) is committed to your
 repository. This means anyone can pull new changes and contribute your team's
 changes back upstream.
 
-Also, this extension does all its pull/push magic in a separate clone (in
-.git/.subrepo).
+Also, this extension does all its magic in a separate clone (in .git/.subrepo).
 This is important because you'll most likely have existing software (an IDE,
 a build script, etc.) monitoring your repository for changes. It would be
 really annoying if your IDE closed all your files during a pull.
@@ -90,6 +86,11 @@ With git subrepo, pulls can lose your local changes. This bug might also exist
 in git stree. Also, with git subrepo, the subrepo gets checked out within your
 project repository on every subrepo pull. This breaks your IDE and any build
 scripts watching your repo, as described above.
+
+## Known issues
+Building the subrepo history can take a long time when there are lots of commits
+in that subrepo folder, especially on Windows. Currently we always rebuild the
+whole history instead of reusing the existing repo once it's built.
 
 ## Contributing
 Contributions are always welcome. Just create a fork of this repo and send a
